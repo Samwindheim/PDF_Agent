@@ -1,0 +1,26 @@
+
+# url loader
+from langchain_community.document_loaders import WebBaseLoader
+
+# Set a default user agent if not already set
+os.environ.setdefault('USER_AGENT', 'Mozilla/5.0 (compatible; MyBot/1.0; +http://mywebsite.com/bot)')
+
+urlloader = WebBaseLoader("https://www.robertchristgau.com/xg/web/cgusers.php")
+docs = urlloader.load()
+
+print(docs[0].page_content[0:1000])
+
+
+
+
+#pdf loader
+pdfloader = PyPDFLoader("MotivationletterSCSSO.pdf")
+pages = pdfloader.load()
+
+
+# pdf splitter
+pdf_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=26,
+    chunk_overlap=4
+)
+
