@@ -10,23 +10,42 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
+from langchain.chains import RetrievalQA
 
 # Update API key initialization
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 # LOAD PDF
 loaders = [
-    PyPDFLoader('MotivationletterSCSSO.pdf')
+    PyPDFLoader("MotivationletterSCSSO.pdf")
 ]
+
 docs = []
 for loader in loaders:
     docs.extend(loader.load())
 
 # SPLITTER
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size = 1500,
-    chunk_overlap = 150
+    chunk_size=300,      # Increase chunk size to reduce number of splits
+    chunk_overlap=50,    # Maintain some overlap for context
+    separators=["\n\n", "\n", ".", "!", "?", ";"]  # Prioritize sentence-ending punctuation
 )
+
+def print_splits(splits, num_chars=200):
+    """
+    Print the content of each split with optional character limit.
+    
+    Args:
+        splits: List of document splits
+        num_chars: Number of characters to display from each split
+    """
+    print(f"Total number of splits: {len(splits)}\n")
+    
+    for i, split in enumerate(splits, 1):
+        print(f"Split {i}:")
+        print(f"Page: {split.metadata.get('page', 'unknown')}")
+        print(f"Content: {split.page_content}")  # Display first num_chars characters
+        print("-" * 80 + "\n")
 
 splits = text_splitter.split_documents(docs)
 
@@ -44,14 +63,51 @@ vector_store = Chroma.from_documents(
 
 #print(vector_store._collection.count())
 
-# Embedding
-embedding_1 = embeddings.embed_query("I love programming")
-embedding_2 = embeddings.embed_query("I love music")
-embedding_3 = embeddings.embed_query("What's the weather like in Konstanz?")
+# Define a function to perform RAG
+def retrieval_augmented_generation(question, k=3):
+    """
+    Perform Retrieval-Augmented Generation to answer a question.
+    
+    Args:
+        question: The question to ask
+        k: Number of relevant documents to retrieve
+    """
+    # Retrieve relevant documents
+    results = vector_store.max_marginal_relevance_search(
+        query=question,
+        k=k,
+        fetch_k=6,
+        lambda_mult=0.7
+    )
+    
+    # Extract content from results
+    context = " ".join([doc.page_content for doc in results])
+    
+    # Generate an answer using the chat API
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that answers questions based on the provided context."},
+            {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
+        ],
+        max_tokens=150,
+        temperature=0.7
+    )
+    
+    print(f"Question: {question}")
+    print(f"Answer: {response.choices[0].message.content.strip()}\n")
 
-print(np.dot(embedding_1, embedding_2))
-print(np.dot(embedding_1, embedding_3))
-print(np.dot(embedding_2, embedding_3))
+# Example usage
+retrieval_augmented_generation("What skills does the candidate highlight?")
+retrieval_augmented_generation("What is the candidate's motivation for applying?")
+retrieval_augmented_generation("What experiences does the candidate mention?")
+retrieval_augmented_generation("What is the candidate's name?")
+
+
+
+
+
+
 
 
 
