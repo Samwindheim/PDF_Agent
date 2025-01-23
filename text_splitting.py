@@ -1,12 +1,10 @@
 import os
-import openai
+from openai import OpenAI
 import sys
 sys.path.append('../..')
 
 from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv()) # read local .env file
-
-openai.api_key  = os.environ['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']
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter, CharacterTextSplitter
