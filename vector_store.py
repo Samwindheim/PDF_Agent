@@ -83,13 +83,25 @@ def retrieval_augmented_generation(question, k=3):
     # Extract content from results
     context = " ".join([doc.page_content for doc in results])
     
+    # Manually construct messages
+    formatted_messages = [
+        {
+            "role": "system",
+            "content": """You are a helpful assistant analyzing a motivation letter. 
+            Use only the provided context to answer questions. 
+            If the information isn't in the context, say 'I cannot find this information in the provided context.'
+            Be concise and specific in your responses."""
+        },
+        {
+            "role": "user",
+            "content": f"Context: {context}\n\nQuestion: {question}\n\nPlease provide a clear and specific answer based on the context above."
+        }
+    ]
+    
     # Generate an answer using the chat API
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that answers questions based on the provided context."},
-            {"role": "user", "content": f"Context: {context}\n\nQuestion: {question}"}
-        ],
+        messages=formatted_messages,
         max_tokens=150,
         temperature=0.7
     )
@@ -98,25 +110,9 @@ def retrieval_augmented_generation(question, k=3):
     print(f"Answer: {response.choices[0].message.content.strip()}\n")
 
 # Example usage
-retrieval_augmented_generation("What skills does the candidate highlight?")
-retrieval_augmented_generation("What is the candidate's motivation for applying?")
-retrieval_augmented_generation("What experiences does the candidate mention?")
-retrieval_augmented_generation("What is the candidate's name?")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    while True:
+        question = input("Enter a question (or type 'exit' to quit): ")
+        if question.lower() == 'exit':
+            break
+        retrieval_augmented_generation(question)
