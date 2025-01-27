@@ -14,3 +14,5 @@ myenv/
 
 # Data files
 MotivationletterSCSSO.pdf
+
+.DS_store
