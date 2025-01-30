@@ -1,5 +1,4 @@
 import os
-from openai import OpenAI
 import sys
 import numpy as np
 sys.path.append('../..')
@@ -8,12 +7,13 @@ from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv()) # read local .env file
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, OpenAI as LangchainOpenAI
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 
 # Update API key initialization
-client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+client = LangchainOpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 # LOAD PDF
 loaders = [
@@ -31,21 +31,6 @@ text_splitter = RecursiveCharacterTextSplitter(
     separators=["\n\n", "\n", ".", "!", "?", ";"]  # Prioritize sentence-ending punctuation
 )
 
-def print_splits(splits, num_chars=200):
-    """
-    Print the content of each split with optional character limit.
-    
-    Args:
-        splits: List of document splits
-        num_chars: Number of characters to display from each split
-    """
-    print(f"Total number of splits: {len(splits)}\n")
-    
-    for i, split in enumerate(splits, 1):
-        print(f"Split {i}:")
-        print(f"Page: {split.metadata.get('page', 'unknown')}")
-        print(f"Content: {split.page_content}")  # Display first num_chars characters
-        print("-" * 80 + "\n")
 
 splits = text_splitter.split_documents(docs)
 
@@ -63,7 +48,14 @@ vector_store = Chroma.from_documents(
 
 #print(vector_store._collection.count())
 
-# Define a function to perform RAG
+# Build prompt
+template = """Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer. Use three sentences maximum. Keep the answer as concise as possible. Always say "thanks for asking!" at the end of the answer. 
+{context}
+Question: {question}
+Helpful Answer:"""
+QA_CHAIN_PROMPT = PromptTemplate(input_variables=["context", "question"], template=template)
+
+# Define a function to perform RAG using QA chain
 def retrieval_augmented_generation(question, k=3):
     """
     Perform Retrieval-Augmented Generation to answer a question.
@@ -83,31 +75,18 @@ def retrieval_augmented_generation(question, k=3):
     # Extract content from results
     context = " ".join([doc.page_content for doc in results])
     
-    # Manually construct messages
-    formatted_messages = [
-        {
-            "role": "system",
-            "content": """You are a helpful assistant analyzing a motivation letter. 
-            Use only the provided context to answer questions. 
-            If the information isn't in the context, say 'I cannot find this information in the provided context.'
-            Be concise and specific in your responses."""
-        },
-        {
-            "role": "user",
-            "content": f"Context: {context}\n\nQuestion: {question}\n\nPlease provide a clear and specific answer based on the context above."
-        }
-    ]
-    
-    # Generate an answer using the chat API
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=formatted_messages,
-        max_tokens=150,
-        temperature=0.7
+    # Run chain
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=client,  # Use the Langchain-compatible OpenAI instance
+        retriever=vector_store.as_retriever(),
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": QA_CHAIN_PROMPT}
     )
     
+    result = qa_chain.invoke({"query": question, "context": context})
+    
     print(f"Question: {question}")
-    print(f"Answer: {response.choices[0].message.content.strip()}\n")
+    print(f"Answer: {result['result']}\n")
 
 # Example usage
 if __name__ == "__main__":
