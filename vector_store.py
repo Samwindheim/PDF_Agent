@@ -1,6 +1,7 @@
 import os
 import sys
 import numpy as np
+import shutil
 sys.path.append('../..')
 
 from dotenv import load_dotenv, find_dotenv
@@ -15,6 +16,14 @@ from langchain.prompts import PromptTemplate
 # Update API key initialization
 client = LangchainOpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
+# Function to reset the vector store
+def reset_vector_store(persist_directory):
+    if os.path.exists(persist_directory):
+        shutil.rmtree(persist_directory)
+        print(f"Vector store at '{persist_directory}' has been reset.")
+    else:
+        print(f"No existing vector store found at '{persist_directory}'.")
+
 # LOAD PDF
 loaders = [
     PyPDFLoader("MotivationletterSCSSO.pdf")
@@ -24,22 +33,26 @@ docs = []
 for loader in loaders:
     docs.extend(loader.load())
 
-# SPLITTER
+# SPLITTER with new chunk sizes
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=300,      # Increase chunk size to reduce number of splits
-    chunk_overlap=50,    # Maintain some overlap for context
-    separators=["\n\n", "\n", ".", "!", "?", ";"]  # Prioritize sentence-ending punctuation
+    chunk_size=400,      # New chunk size
+    chunk_overlap=50,    # New overlap
+    separators=["\n\n", "\n", ".", "!", "?", ";", " "]
 )
 
-
+# Split the documents into smaller chunks
 splits = text_splitter.split_documents(docs)
 
 # VECTOR STORE
 persist_directory = 'data/chroma/'
 
+# Reset the vector store
+reset_vector_store(persist_directory)
+
 # Define embeddings before using it in vector store
 embeddings = OpenAIEmbeddings()
 
+# Reinitialize the vector store with new documents
 vector_store = Chroma.from_documents(
     documents=splits,
     embedding=embeddings,
@@ -48,15 +61,16 @@ vector_store = Chroma.from_documents(
 
 #print(vector_store._collection.count())
 
-# Build prompt
-template = """Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer. Use three sentences maximum. Keep the answer as concise as possible. Always say "thanks for asking!" at the end of the answer. 
-{context}
+# Build prompt with clearer instructions
+template = """Use the following pieces of context to answer the question at the end. 
+Use three sentences maximum. Keep the answer as concise as possible.
+Context: {context}
 Question: {question}
 Helpful Answer:"""
 QA_CHAIN_PROMPT = PromptTemplate(input_variables=["context", "question"], template=template)
 
 # Define a function to perform RAG using QA chain
-def retrieval_augmented_generation(question, k=3):
+def retrieval_augmented_generation(question, k=5):
     """
     Perform Retrieval-Augmented Generation to answer a question.
     
