@@ -2,19 +2,26 @@ import os
 import sys
 import numpy as np
 import shutil
+from typing import List
 sys.path.append('../..')
 
 from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv()) # read local .env file
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_openai import OpenAIEmbeddings, OpenAI as LangchainOpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
 
-# Update API key initialization
-client = LangchainOpenAI(api_key=os.environ['OPENAI_API_KEY'])
+# Initialize the model
+model = ChatOpenAI(
+    api_key=os.environ['OPENAI_API_KEY'],
+    model="gpt-4"
+)
 
 # Function to reset the vector store
 def reset_vector_store(persist_directory):
@@ -61,51 +68,69 @@ vector_store = Chroma.from_documents(
 
 #print(vector_store._collection.count())
 
-# Build prompt with clearer instructions
-template = """Use the following pieces of context to answer the question at the end. 
-Use three sentences maximum. Keep the answer as concise as possible.
-Context: {context}
-Question: {question}
-Helpful Answer:"""
-QA_CHAIN_PROMPT = PromptTemplate(input_variables=["context", "question"], template=template)
+# Create a workflow with memory management
+workflow = StateGraph(state_schema=MessagesState)
 
-# Define a function to perform RAG using QA chain
-def retrieval_augmented_generation(question, k=5):
-    """
-    Perform Retrieval-Augmented Generation to answer a question.
+def create_augmented_response(state: MessagesState, vector_store):
+    """Generate responses using both chat history and retrieved context"""
+    # Get the latest question
+    latest_msg = state["messages"][-1].content if state["messages"] else ""
     
-    Args:
-        question: The question to ask
-        k: Number of relevant documents to retrieve
-    """
     # Retrieve relevant documents
     results = vector_store.max_marginal_relevance_search(
-        query=question,
-        k=k,
+        query=latest_msg,
+        k=3,
         fetch_k=6,
         lambda_mult=0.7
     )
-    
-    # Extract content from results
     context = " ".join([doc.page_content for doc in results])
     
-    # Run chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=client,  # Use the Langchain-compatible OpenAI instance
-        retriever=vector_store.as_retriever(),
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": QA_CHAIN_PROMPT}
+    # Create messages with system prompt, chat history, and context
+    messages = [
+        SystemMessage(content=(
+            "You are a helpful assistant. Use both the conversation history "
+            "and the provided context to give accurate answers. "
+            f"Context: {context}"
+        ))
+    ] + state["messages"]
+    
+    # Get response from the model
+    response = model.invoke(messages)
+    return {"messages": response}
+
+def setup_chat_workflow(vector_store):
+    """Set up the chat workflow with memory"""
+    # Define the function that processes messages
+    def process_messages(state: MessagesState):
+        return create_augmented_response(state, vector_store)
+    
+    # Add node and edge to workflow
+    workflow.add_node("chat", process_messages)
+    workflow.add_edge(START, "chat")
+    
+    # Add memory management
+    memory = MemorySaver()
+    return workflow.compile(checkpointer=memory)
+
+def chat_with_memory(question: str, app, thread_id: str = "default"):
+    """Handle chat interaction with memory"""
+    response = app.invoke(
+        {"messages": [HumanMessage(content=question)]},
+        config={"configurable": {"thread_id": thread_id}}
     )
-    
-    result = qa_chain.invoke({"query": question, "context": context})
-    
-    print(f"Question: {question}")
-    print(f"Answer: {result['result']}\n")
+    # Extract and return just the latest AI response
+    return response["messages"][-1].content
 
 # Example usage
 if __name__ == "__main__":
+    # Set up the chat application with memory
+    app = setup_chat_workflow(vector_store)
+    thread_id = "user_session_1"  # You can use different IDs for different chat sessions
+    
     while True:
         question = input("Enter a question (or type 'exit' to quit): ")
         if question.lower() == 'exit':
             break
-        retrieval_augmented_generation(question)
+            
+        response = chat_with_memory(question, app, thread_id)
+        print(f"\nAssistant: {response}\n")
