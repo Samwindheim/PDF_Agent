@@ -33,7 +33,7 @@ def reset_vector_store(persist_directory):
 
 # LOAD PDF
 loaders = [
-    PyPDFLoader("MotivationletterSCSSO.pdf")
+    PyPDFLoader("MotivationletterSDKIO.pdf")
 ]
 
 docs = []
@@ -120,6 +120,55 @@ def chat_with_memory(question: str, app, thread_id: str = "default"):
     )
     # Extract and return just the latest AI response
     return response["messages"][-1].content
+
+def extract_metadata(doc):
+    """Extract metadata focusing on header section of the document"""
+    import re
+    from datetime import datetime
+
+    # Initialize metadata dictionary
+    metadata = {
+        'date': None,
+        'author': None
+    }
+    
+    # Get the text content and focus on the first few lines (header)
+    text = doc.page_content
+    header_lines = text.split('\n')[:5]  # Look at first 5 lines for header information
+    header_text = '\n'.join(header_lines)
+    
+    # Date patterns for header formats
+    date_patterns = [
+        r'\b(?:Date|Dated):\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # Date: DD/MM/YYYY
+        r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # DD/MM/YYYY or DD-MM-YYYY
+        r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b'
+    ]
+    
+    # Try to find dates in header
+    for pattern in date_patterns:
+        match = re.search(pattern, header_text, re.IGNORECASE)
+        if match:
+            try:
+                date_str = match.group(1) if 'Date:' in pattern else match.group(0)
+                metadata['date'] = date_str
+                break
+            except ValueError:
+                continue
+    
+    # Author patterns focusing on header formats
+    author_patterns = [
+        r'(?:From|Author|By):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})',
+        r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})'  # Name at the start
+    ]
+    
+    # Try to find author in header
+    for pattern in author_patterns:
+        match = re.search(pattern, header_text, re.IGNORECASE)
+        if match:
+            metadata['author'] = match.group(1).strip()
+            break
+    
+    return metadata
 
 # Example usage
 if __name__ == "__main__":
