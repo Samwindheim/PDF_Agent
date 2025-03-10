@@ -122,56 +122,41 @@ def chat_with_memory(question: str, app, thread_id: str = "default"):
     return response["messages"][-1].content
 
 def extract_metadata(doc):
-    """Extract metadata focusing on header section of the document"""
-    import re
-    from datetime import datetime
-
-    # Initialize metadata dictionary
-    metadata = {
-        'date': None,
-        'author': None
-    }
+    """Extract metadata using LLM to analyze the document content"""
+    system_prompt = """You are a metadata extraction assistant. Given a document, extract the following metadata:
+    1. Date (if present)
+    2. Author (if present)
+    Return ONLY a JSON-like string in this exact format:
+    {"date": "found_date or null", "author": "found_author or null"}"""
     
-    # Get the text content and focus on the first few lines (header)
-    text = doc.page_content
-    header_lines = text.split('\n')[:5]  # Look at first 5 lines for header information
-    header_text = '\n'.join(header_lines)
-    
-    # Date patterns for header formats
-    date_patterns = [
-        r'\b(?:Date|Dated):\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # Date: DD/MM/YYYY
-        r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # DD/MM/YYYY or DD-MM-YYYY
-        r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b'
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=f"Extract metadata from this text:\n\n{doc.page_content}")
     ]
     
-    # Try to find dates in header
-    for pattern in date_patterns:
-        match = re.search(pattern, header_text, re.IGNORECASE)
-        if match:
-            try:
-                date_str = match.group(1) if 'Date:' in pattern else match.group(0)
-                metadata['date'] = date_str
-                break
-            except ValueError:
-                continue
+    response = model.invoke(messages)
     
-    # Author patterns focusing on header formats
-    author_patterns = [
-        r'(?:From|Author|By):\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})',
-        r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})'  # Name at the start
-    ]
-    
-    # Try to find author in header
-    for pattern in author_patterns:
-        match = re.search(pattern, header_text, re.IGNORECASE)
-        if match:
-            metadata['author'] = match.group(1).strip()
-            break
-    
-    return metadata
+    try:
+        # Clean up the response to get just the JSON string
+        import json
+        json_str = response.content.strip()
+        if json_str.startswith("```") and json_str.endswith("```"):
+            json_str = json_str[3:-3].strip()
+        metadata = json.loads(json_str)
+        return metadata
+    except Exception as e:
+        print(f"Error parsing metadata: {e}")
+        return {"date": None, "author": None}
 
 # Example usage
 if __name__ == "__main__":
+    # Extract and print metadata from the first document
+    if docs:
+        metadata = extract_metadata(docs[0])
+        print("\nDocument Metadata:")
+        print(f"Date: {metadata['date'] or 'Not found'}")
+        print(f"Author: {metadata['author'] or 'Not found'}\n")
+
     # Set up the chat application with memory
     app = setup_chat_workflow(vector_store)
     thread_id = "user_session_1"  # You can use different IDs for different chat sessions
