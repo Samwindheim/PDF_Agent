@@ -42,7 +42,7 @@ for loader in loaders:
 
 # SPLITTER with new chunk sizes
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=400,      # New chunk size
+    chunk_size=600,      # New chunk size
     chunk_overlap=50,    # New overlap
     separators=["\n\n", "\n", ".", "!", "?", ";", " "]
 )
@@ -148,6 +148,19 @@ def extract_metadata(doc):
         print(f"Error parsing metadata: {e}")
         return {"date": None, "author": None}
 
+# Function to view the contents of the Chroma vector store
+def view_chroma_database(vector_store):
+    """Print the number of documents and their contents in the Chroma vector store."""
+    count = vector_store._collection.count()
+    print(f"Number of documents in the Chroma database: {count}")
+    
+    # Retrieve and print the documents using the get() method
+    all_data = vector_store.get()  # Use the get() method to retrieve all documents
+    for i in range(len(all_data["ids"])):
+        doc_id = all_data["ids"][i]
+        content = all_data["documents"][i]
+        print(f"\nDocument ID: {doc_id}, \nContent: {content}")
+
 # Example usage
 if __name__ == "__main__":
     # Extract and print metadata from the first document
@@ -157,10 +170,13 @@ if __name__ == "__main__":
         print(f"Date: {metadata['date'] or 'Not found'}")
         print(f"Author: {metadata['author'] or 'Not found'}\n")
 
+    # View the Chroma database contents
+    # view_chroma_database(vector_store)
+
     # Set up the chat application with memory
     app = setup_chat_workflow(vector_store)
     thread_id = "user_session_1"  # You can use different IDs for different chat sessions
-    
+
     while True:
         question = input("Enter a question (or type 'exit' to quit): ")
         if question.lower() == 'exit':
