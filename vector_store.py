@@ -66,7 +66,6 @@ vector_store = Chroma.from_documents(
     persist_directory=persist_directory
 )
 
-#print(vector_store._collection.count())
 
 # Create a workflow with memory management
 workflow = StateGraph(state_schema=MessagesState)
@@ -161,7 +160,6 @@ def view_chroma_database(vector_store):
         content = all_data["documents"][i]
         print(f"\nDocument ID: {doc_id}, \nContent: {content}")
 
-# Example usage
 if __name__ == "__main__":
     # Extract and print metadata from the first document
     if docs:
