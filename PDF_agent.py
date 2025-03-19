@@ -62,7 +62,7 @@ def view_chroma_database(vector_store):
         print(f"\nDocument ID: {doc_id}, \nContent: {content}")
 
 # 2. Document Processing
-def process_documents(pdf_paths: List[str], chunk_size: int = 1000, chunk_overlap: int = 200):
+def process_documents(pdf_paths: List[str], chunk_size: int = 1000, chunk_overlap: int = 100):
     """Process PDF documents and create vector store."""
     # Load PDFs
     loaders = [PyPDFLoader(path) for path in pdf_paths]
@@ -108,10 +108,11 @@ def create_augmented_response(state: MessagesState, vector_store):
     # Retrieve relevant documents
     results = vector_store.max_marginal_relevance_search(
         query=latest_msg,
-        k=4,                # number of docs to return. the 3 most relevant
-        fetch_k=5,          # initial pool of docs to fetch 
-        lambda_mult=0.8     #diversity weight parameter 70% on relevance, 30% diversity
+        k=6,                # number of docs to return. the 3 most relevant
+        fetch_k=10,          # initial pool of docs to fetch 
+        lambda_mult=0.7     # diversity weight parameter 80% on relevance, 20% diversity
     )
+    
     context = " ".join([doc.page_content for doc in results])
     
     # Create messages with system prompt, chat history, and context
@@ -119,6 +120,8 @@ def create_augmented_response(state: MessagesState, vector_store):
         SystemMessage(content=(
             "You are a helpful assistant. Use both the conversation history "
             "and the provided context to give accurate answers. "
+            "Respect the order of documents. Words like 'last' for example should "
+            "Indicate looking at the last document. "
             f"Context: {context}"
         ))
     ] + state["messages"]
@@ -151,6 +154,20 @@ def chat_with_memory(question: str, app, thread_id: str = "default"):
     return response["messages"][-1].content
 
 # 4. Main Execution
+"""
+graph TD
+    A[chat_with_memory] --> B[app.invoke]
+    B --> C[process_messages]
+    C --> D[create_augmented_response]
+    D --> E[vector_store.search]
+    D --> F[model.invoke]
+    F --> G[Return Response]
+
+    StateGraph: Manages the workflow structure
+    vector_store: Holds document embeddings for semantic search
+    model: The LLM (GPT-4) that generates responses
+    MemorySaver: Handles conversation persistence
+"""
 if __name__ == "__main__":
     # Initialize OpenAI
     model = ChatOpenAI(
@@ -163,7 +180,7 @@ if __name__ == "__main__":
     reset_vector_store(persist_directory)
     
     # Process documents
-    pdf_paths = ["MotivationletterSDKIO.pdf"]
+    pdf_paths = ["short_story.pdf"]
     docs, splits = process_documents(pdf_paths)
     
     # Initialize embeddings and vector store
@@ -173,6 +190,10 @@ if __name__ == "__main__":
         embedding=embeddings,
         persist_directory=persist_directory
     )
+    
+    # View vector store contents for debugging
+    print("\nViewing Chroma Database Contents:")
+    view_chroma_database(vector_store)
     
     # Extract metadata
     if docs:
