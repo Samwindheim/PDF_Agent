@@ -180,7 +180,8 @@ if __name__ == "__main__":
     reset_vector_store(persist_directory)
     
     # Process documents
-    pdf_paths = ["short_story.pdf"]
+    pdf_paths = input("Enter the path to your PDF file: ").split(',')
+    pdf_paths = [path.strip() for path in pdf_paths]  # Clean up any extra spaces
     docs, splits = process_documents(pdf_paths)
     
     # Initialize embeddings and vector store
@@ -192,8 +193,8 @@ if __name__ == "__main__":
     )
     
     # View vector store contents for debugging
-    print("\nViewing Chroma Database Contents:")
-    view_chroma_database(vector_store)
+    # print("\nViewing Chroma Database Contents:")
+    # view_chroma_database(vector_store)
     
     # Extract metadata
     if docs:
