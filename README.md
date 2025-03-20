@@ -10,7 +10,7 @@ PDF Agent is a chatbot application that processes PDF documents, extracts metada
 - Extract metadata such as date and author.
 - Maintain conversation history with memory management.
 - Generate AI responses using document context and chat history.
-- 
+  
 ## Dependencies
 
 The following dependencies are required for the PDF Agent to function:
