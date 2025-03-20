@@ -1,14 +1,39 @@
+"""
+PDF Agent: A Chatbot for PDF Document Interaction
+
+This program processes PDF documents, extracts metadata, 
+and allows users to interact with the content through a chat interface. 
+It utilizes OpenAI's language model to generate responses based on the 
+conversation history and relevant document context. 
+The workflow includes resetting a vector store for document 
+embeddings, processing PDF files, and managing conversation memory.
+
+Key Features:
+- Load and process PDF documents.
+- Extract metadata such as date and author.
+- Maintain conversation history with memory management.
+- Generate AI responses using document context and chat history.
+"""
+
 import os
 import sys
 import shutil
 from typing import List
-sys.path.append('../..')
+sys.path.append('../..')  # Add parent directory to the system path for module imports
 from dotenv import load_dotenv, find_dotenv
-_ = load_dotenv(find_dotenv()) # read local .env file
+
+# Load environment variables from a .env file
+_ = load_dotenv(find_dotenv())
+
+# Import Langtrace for tracing application performance
+from langtrace_python_sdk import langtrace
+langtrace.init(api_key=os.environ['LANGTRACE_KEY'])  # Initialize Langtrace with API key from environment variable
+
+# Import necessary modules from Langchain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
@@ -17,7 +42,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 def reset_vector_store(persist_directory):
     """Reset or initialize the vector store directory."""
     if os.path.exists(persist_directory):
-        shutil.rmtree(persist_directory)
+        shutil.rmtree(persist_directory)  # Remove existing vector store directory
         print(f"Vector store at '{persist_directory}' has been reset.")
     else:
         print(f"No existing vector store found at '{persist_directory}'.")
@@ -30,11 +55,13 @@ def extract_metadata(doc):
     Return ONLY a JSON-like string in this exact format:
     {"date": "found_date or null", "author": "found_author or null"}"""
     
+    # Prepare messages for the LLM
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=f"Extract metadata from this text:\n\n{doc.page_content}")
     ]
     
+    # Invoke the model to extract metadata
     response = model.invoke(messages)
     
     try:
@@ -42,43 +69,43 @@ def extract_metadata(doc):
         import json
         json_str = response.content.strip()
         if json_str.startswith("```") and json_str.endswith("```"):
-            json_str = json_str[3:-3].strip()
-        metadata = json.loads(json_str)
+            json_str = json_str[3:-3].strip()  # Remove code block formatting
+        metadata = json.loads(json_str)  # Parse the JSON string
         return metadata
     except Exception as e:
-        print(f"Error parsing metadata: {e}")
+        print(f"Error parsing metadata: {e}")  # Handle JSON parsing errors
         return {"date": None, "author": None}
 
 def view_chroma_database(vector_store):
     """Print the contents of the Chroma vector store."""
-    count = vector_store._collection.count()
+    count = vector_store._collection.count()  # Get the number of documents in the vector store
     print(f"Number of documents in the Chroma database: {count}")
     
     # Retrieve and print the documents using the get() method
     all_data = vector_store.get()  # Use the get() method to retrieve all documents
     for i in range(len(all_data["ids"])):
-        doc_id = all_data["ids"][i]
-        content = all_data["documents"][i]
+        doc_id = all_data["ids"][i]  # Get document ID
+        content = all_data["documents"][i]  # Get document content
         print(f"\nDocument ID: {doc_id}, \nContent: {content}")
 
 # 2. Document Processing
 def process_documents(pdf_paths: List[str], chunk_size: int = 1000, chunk_overlap: int = 100):
     """Process PDF documents and create vector store."""
-    # Load PDFs
+    # Load PDFs using the PyPDFLoader
     loaders = [PyPDFLoader(path) for path in pdf_paths]
     docs = []
     for loader in loaders:
-        docs.extend(loader.load())
-    
-    # Split documents
+        docs.extend(loader.load())  # Load documents into the list
+
+    # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", ".", "!", "?", ";", " "]
+        separators=["\n\n", "\n", ".", "!", "?", ";", " "]  # Define separators for splitting
     )
-    splits = text_splitter.split_documents(docs)
+    splits = text_splitter.split_documents(docs)  # Split the loaded documents into chunks
     
-    return docs, splits
+    return docs, splits  # Return the original documents and their splits
 
 # 3. Chat System Components
 def create_augmented_response(state: MessagesState, vector_store):
@@ -102,17 +129,18 @@ def create_augmented_response(state: MessagesState, vector_store):
         - From initial pool of 6 chunks (fetch_k=6)
         - Using 70% relevance, 30% diversity weighting (lambda_mult=0.7)
     """
-    # Get the latest question
+    # Get the latest question from the conversation state
     latest_msg = state["messages"][-1].content if state["messages"] else ""
     
-    # Retrieve relevant documents
+    # Retrieve relevant documents using Max Marginal Relevance
     results = vector_store.max_marginal_relevance_search(
         query=latest_msg,
-        k=6,                # number of docs to return. the 3 most relevant
-        fetch_k=10,          # initial pool of docs to fetch 
-        lambda_mult=0.7     # diversity weight parameter 80% on relevance, 20% diversity
+        k=6,                # Number of documents to return
+        fetch_k=10,        # Initial pool of documents to fetch 
+        lambda_mult=0.7     # Diversity weight parameter
     )
     
+    # Combine the content of the retrieved documents
     context = " ".join([doc.page_content for doc in results])
     
     # Create messages with system prompt, chat history, and context
@@ -121,14 +149,14 @@ def create_augmented_response(state: MessagesState, vector_store):
             "You are a helpful assistant. Use both the conversation history "
             "and the provided context to give accurate answers. "
             "Respect the order of documents. Words like 'last' for example should "
-            "Indicate looking at the last document. "
+            "indicate looking at the last document. "
             f"Context: {context}"
         ))
     ] + state["messages"]
     
     # Get response from the model
     response = model.invoke(messages)
-    return {"messages": response}
+    return {"messages": response}  # Return the AI's response
 
 def setup_chat_workflow(vector_store):
     """Create and configure the chat workflow with memory management."""
@@ -156,6 +184,7 @@ def chat_with_memory(question: str, app, thread_id: str = "default"):
 # 4. Main Execution
 """
 graph TD
+
     A[chat_with_memory] --> B[app.invoke]
     B --> C[process_messages]
     C --> D[create_augmented_response]
@@ -169,20 +198,33 @@ graph TD
     MemorySaver: Handles conversation persistence
 """
 if __name__ == "__main__":
+    # Initialize Langtrace
+    langtrace.init(api_key=os.environ['LANGTRACE_KEY'])  # Use the environment variable for the API key
+
     # Initialize OpenAI
     model = ChatOpenAI(
         api_key=os.environ['OPENAI_API_KEY'],
         model="gpt-4"
     )
     
+    # Check if pdf arg is provided
+    if len(sys.argv) != 2:
+        print("Usage: python PDF_agent.py <path_to_pdf>")
+        sys.exit(1)
+
     # Setup vector store
     persist_directory = 'data/chroma/'
     reset_vector_store(persist_directory)
     
-    # Process documents
-    pdf_paths = input("Enter the path to your PDF file: ").split(',')
-    pdf_paths = [path.strip() for path in pdf_paths]  # Clean up any extra spaces
-    docs, splits = process_documents(pdf_paths)
+    # Take argument
+    pdf_path = sys.argv[1]
+    
+    # Ensure file exists
+    if not os.path.isfile(pdf_path) or not pdf_path.lower().endswith('.pdf'):
+        print(f"Invalid file: {pdf_path}. Please ensure it exists and is a PDF file.")
+        sys.exit(1)
+
+    docs, splits = process_documents([pdf_path])
     
     # Initialize embeddings and vector store
     embeddings = OpenAIEmbeddings()
@@ -209,10 +251,10 @@ if __name__ == "__main__":
     thread_id = "user_session_1"
     
     # Start chat loop
-    while True:
-        question = input("Enter a question (or type 'exit' to quit): ")
-        if question.lower() == 'exit':
-            break
-        
-        response = chat_with_memory(question, app, thread_id)
-        print(f"\nAssistant: {response}\n")
+    try:
+        while True:
+            question = input("Enter a question (Or press Ctrl+C to quit): ")
+            response = chat_with_memory(question, app, thread_id)
+            print(f"\nAssistant: {response}\n")
+    except KeyboardInterrupt:
+        print("\nExiting chat. Goodbye!")
