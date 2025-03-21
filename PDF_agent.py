@@ -15,21 +15,18 @@ Key Features:
 - Generate AI responses using document context and chat history.
 """
 
+# Standard library imports
 import os
 import sys
 import shutil
 from typing import List
-sys.path.append('../..')  # Add parent directory to the system path for module imports
-from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables from a .env file
+# Env imports and load env variables
+from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv())
 
-# Import Langtrace for tracing application performance
+# Langchain and Langtrace imports
 from langtrace_python_sdk import langtrace
-langtrace.init(api_key=os.environ['LANGTRACE_KEY'])  # Initialize Langtrace with API key from environment variable
-
-# Import necessary modules from Langchain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -89,13 +86,28 @@ def view_chroma_database(vector_store):
         print(f"\nDocument ID: {doc_id}, \nContent: {content}")
 
 # 2. Document Processing
-def process_documents(pdf_paths: List[str], chunk_size: int = 1000, chunk_overlap: int = 100):
+def process_documents(pdf_paths: List[str]):
     """Process PDF documents and create vector store."""
     # Load PDFs using the PyPDFLoader
     loaders = [PyPDFLoader(path) for path in pdf_paths]
     docs = []
     for loader in loaders:
         docs.extend(loader.load())  # Load documents into the list
+
+    # Determine chunk size and overlap based on document size
+    if len(docs) < 5:  # Example condition for small documents
+        chunk_size = 1000
+        chunk_overlap = 50
+    elif len(docs) < 20:  # Example condition for medium documents
+        chunk_size = 500
+        chunk_overlap = 100
+    else:  # Large documents
+        chunk_size = 200
+        chunk_overlap = 50
+
+    print("# of docs: ", len(docs))
+    print("Chunk size: ", chunk_size)
+    print("Chunk overlap: ", chunk_overlap)
 
     # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
@@ -148,8 +160,6 @@ def create_augmented_response(state: MessagesState, vector_store):
         SystemMessage(content=(
             "You are a helpful assistant. Use both the conversation history "
             "and the provided context to give accurate answers. "
-            "Respect the order of documents. Words like 'last' for example should "
-            "indicate looking at the last document. "
             f"Context: {context}"
         ))
     ] + state["messages"]
