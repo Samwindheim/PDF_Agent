@@ -40,7 +40,7 @@ def reset_vector_store(persist_directory):
     """Reset or initialize the vector store directory."""
     if os.path.exists(persist_directory):
         shutil.rmtree(persist_directory)  # Remove existing vector store directory
-        print(f"Vector store at '{persist_directory}' has been reset.")
+        #print(f"Vector store at '{persist_directory}' has been reset.")
     else:
         print(f"No existing vector store found at '{persist_directory}'.")
 
@@ -105,9 +105,9 @@ def process_documents(pdf_paths: List[str]):
         chunk_size = 200
         chunk_overlap = 50
 
-    print("# of docs: ", len(docs))
-    print("Chunk size: ", chunk_size)
-    print("Chunk overlap: ", chunk_overlap)
+    # print("# of docs: ", len(docs))
+    # print("Chunk size: ", chunk_size)
+    # print("Chunk overlap: ", chunk_overlap)
 
     # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
@@ -253,7 +253,8 @@ if __name__ == "__main__":
         metadata = extract_metadata(docs[0])
         print("\nDocument Metadata:")
         print(f"Date: {metadata['date'] or 'Not found'}")
-        print(f"Author: {metadata['author'] or 'Not found'}\n")
+        print(f"Author: {metadata['author'] or 'Not found'}")
+        print("Number of pages:", len(docs),"\n")
     
     # Initialize chat application
     workflow = StateGraph(state_schema=MessagesState)
